@@ -71,6 +71,24 @@
         # $env:COMPANY_ID="ここにあなたの対象会社ID"
         ```
 
+3. *デフォルト勤怠、休憩時間変更*
+
+   下記の時間を変更してください。
+ ```bash
+var (
+	// targetYear, targetMonth は引数から取得するため削除
+	accessToken     = "YOUR_ACCESS_TOKEN" // .env または環境変数で上書きされます
+	targetCompanyId = 0                   // .env または環境変数で上書きされます
+
+	// Define the daily times (変更なし)
+	dailyClockInTime  = "11:00:00"
+	dailyClockOutTime = "21:00:00"
+	dailyBreakStart   = "12:00:00"
+	dailyBreakEnd     = "13:00:00"
+)
+
+```
+
 **注意:** 会社IDはfreee内での貴社を示す数値IDです。freee人事労務のURLに含まれているか、お手持ちのトークンで `/api/v1/users/me` エンドポイントを照会することで確認できる場合があります。
 
 ## 使い方
