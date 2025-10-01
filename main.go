@@ -75,27 +75,10 @@ func main() {
 	// デフォルト値を0にすることで、指定がない場合に検出できるようにする
 	yearPtr := flag.Int("year", 0, "Target year (e.g., 2025) (required)")
 	monthPtr := flag.Int("month", 0, "Target month as a number (1-12) (required)")
+	listCompaniesPtr := flag.Bool("list-companies", false, "List all companies associated with your account")
 
 	// コマンドライン引数をパース
 	flag.Parse()
-
-	// --- 引数の検証 ---
-	if *yearPtr == 0 || *monthPtr == 0 {
-		fmt.Println("Error: Both -year and -month flags are required.")
-		fmt.Println("Usage:")
-		flag.PrintDefaults() // ヘルプメッセージを表示
-		os.Exit(1)           // エラー終了
-	}
-	if *monthPtr < 1 || *monthPtr > 12 {
-		fmt.Printf("Error: Invalid month value %d. Month must be between 1 and 12.\n", *monthPtr)
-		fmt.Println("Usage:")
-		flag.PrintDefaults()
-		os.Exit(1)
-	}
-
-	// 検証済みの値を代入
-	targetYear := *yearPtr
-	targetMonth := *monthPtr // time.Month型ではなくint型(1-12)として保持
 
 	// --- .env/環境変数からの設定読み込み (変更なし) ---
 	err := godotenv.Load()
@@ -119,10 +102,38 @@ func main() {
 	if accessToken == "YOUR_ACCESS_TOKEN" || accessToken == "" {
 		log.Fatal("Error: Please set your freee API access token either in code, .env file (TOKEN=...), or environment variable.")
 	}
+	// --- 設定読み込み終了 ---
+
+	// --- 会社一覧表示モード ---
+	if *listCompaniesPtr {
+		err := listCompanies(accessToken)
+		if err != nil {
+			log.Fatalf("Error listing companies: %v", err)
+		}
+		return
+	}
+
+	// --- 引数の検証 ---
+	if *yearPtr == 0 || *monthPtr == 0 {
+		fmt.Println("Error: Both -year and -month flags are required.")
+		fmt.Println("Usage:")
+		flag.PrintDefaults() // ヘルプメッセージを表示
+		os.Exit(1)           // エラー終了
+	}
+	if *monthPtr < 1 || *monthPtr > 12 {
+		fmt.Printf("Error: Invalid month value %d. Month must be between 1 and 12.\n", *monthPtr)
+		fmt.Println("Usage:")
+		flag.PrintDefaults()
+		os.Exit(1)
+	}
+
+	// 検証済みの値を代入
+	targetYear := *yearPtr
+	targetMonth := *monthPtr // time.Month型ではなくint型(1-12)として保持
+
 	if targetCompanyId == 0 {
 		log.Fatal("Error: Please set your targetCompanyId either in code, .env file (COMPANY_ID=...), or environment variable.")
 	}
-	// --- 設定読み込み終了 ---
 
 	log.Println("Fetching employee ID...")
 	employeeID, err := getEmployeeID(accessToken, targetCompanyId)
@@ -157,6 +168,68 @@ func main() {
 }
 
 // --- API Interaction Functions ---
+
+// listCompanies は、認証されたユーザーに関連する会社の一覧を取得して表示します
+func listCompanies(token string) error {
+	url := freeeBaseURL + "/api/v1/users/me"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("accept", "application/json")
+	req.Header.Set("FREEE-VERSION", "2022-02-01")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("API request failed with status %s: %s", resp.Status, string(bodyBytes))
+	}
+
+	var userInfoResp UserInfoResponse
+	err = json.Unmarshal(bodyBytes, &userInfoResp)
+	if err != nil {
+		return fmt.Errorf("failed to parse JSON response: %w. Response body: %s", err, string(bodyBytes))
+	}
+
+	fmt.Println("\n=== 所属会社一覧 / Company List ===")
+	fmt.Printf("User ID: %d\n\n", userInfoResp.ID)
+
+	if len(userInfoResp.Companies) == 0 {
+		fmt.Println("No companies found.")
+		return nil
+	}
+
+	for i, company := range userInfoResp.Companies {
+		fmt.Printf("[%d] Company ID: %d\n", i+1, company.ID)
+		fmt.Printf("    Name: %s\n", company.Name)
+		fmt.Printf("    Role: %s\n", company.Role)
+		if company.DisplayName != nil {
+			fmt.Printf("    Display Name: %s\n", *company.DisplayName)
+		}
+		if company.EmployeeID != nil {
+			fmt.Printf("    Employee ID: %d\n", *company.EmployeeID)
+		} else {
+			fmt.Printf("    Employee ID: (Not registered as employee)\n")
+		}
+		if company.ExternalID != "" {
+			fmt.Printf("    External ID: %s\n", company.ExternalID)
+		}
+		fmt.Println()
+	}
+
+	return nil
+}
 
 // getEmployeeID 関数 (変更なし)
 func getEmployeeID(token string, companyID int) (int, error) {
